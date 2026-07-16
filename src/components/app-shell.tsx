@@ -32,9 +32,10 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
-const NAV = [
+type NavItem = { to: string; label: string; icon: typeof LayoutDashboard };
+const NAV: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/billing", label: "Billing (POS)", icon: ShoppingCart, highlight: true },
+  { to: "/billing", label: "Billing (POS)", icon: ShoppingCart },
   { to: "/products", label: "Products", icon: Package },
   { to: "/categories", label: "Categories", icon: Tags },
   { to: "/inventory", label: "Inventory", icon: Boxes },
@@ -44,7 +45,7 @@ const NAV = [
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/branches", label: "Branches", icon: Store },
   { to: "/settings", label: "Settings", icon: Settings },
-] as const;
+];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -87,14 +88,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             return (
               <Link
                 key={item.to}
-                to={item.to}
+                to={item.to as any}
                 onClick={() => setOpen(false)}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                   active
                     ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
                     : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  item.highlight && !active && "text-sidebar-foreground",
                 )}
               >
                 <item.icon className="h-4 w-4 shrink-0" />
