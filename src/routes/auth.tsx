@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Shirt, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import logoAsset from "@/assets/login-garments-logo.jpeg.asset.json";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -71,8 +72,8 @@ function AuthPage() {
     <div className="min-h-screen grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between p-12 text-white" style={{ background: "var(--gradient-primary)" }}>
         <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-xl bg-white/15 backdrop-blur grid place-items-center">
-            <Shirt className="h-6 w-6" />
+          <div className="h-12 w-12 rounded-xl bg-black/60 backdrop-blur grid place-items-center overflow-hidden">
+            <img src={logoAsset.url} alt="Login Garments" className="h-full w-full object-contain" />
           </div>
           <div>
             <div className="text-xl font-bold tracking-tight">Login Garments</div>
