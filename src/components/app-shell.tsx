@@ -14,11 +14,11 @@ import {
   Wallet,
   Settings,
   LogOut,
-  Shirt,
   Search,
   Bell,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import logoAsset from "@/assets/login-garments-logo.jpeg.asset.json";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -74,8 +74,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         <div className="h-16 flex items-center gap-3 px-5 border-b border-sidebar-border">
-          <div className="h-9 w-9 rounded-lg grid place-items-center" style={{ background: "var(--gradient-primary)" }}>
-            <Shirt className="h-5 w-5 text-white" />
+          <div className="h-10 w-10 rounded-lg overflow-hidden bg-black grid place-items-center shrink-0">
+            <img src={logoAsset.url} alt="Login Garments" className="h-full w-full object-contain" />
           </div>
           <div className="min-w-0">
             <div className="font-bold text-sm tracking-tight truncate">Login Garments</div>
