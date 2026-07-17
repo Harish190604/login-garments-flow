@@ -13,6 +13,8 @@ import { Search, Trash2, Plus, Minus, ShoppingCart, Barcode as BarcodeIcon } fro
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { formatINR } from "@/lib/format";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Printer } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   component: BillingPage,
@@ -42,6 +44,11 @@ function BillingPage() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paid, setPaid] = useState<string>("");
   const [discount, setDiscount] = useState<string>("0");
+  const [cashAmt, setCashAmt] = useState<string>("");
+  const [upiAmt, setUpiAmt] = useState<string>("");
+  const [cardAmt, setCardAmt] = useState<string>("");
+  const [lastSale, setLastSale] = useState<any>(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
 
   const { data: products = [] } = useQuery({
     queryKey: ["pos-products", search, branchId],
@@ -49,6 +56,12 @@ function BillingPage() {
   });
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: () => listC() });
   const { data: branches = [] } = useQuery({ queryKey: ["branches"], queryFn: () => listB() });
+
+  const isSplit = paymentMethod.includes("+");
+  const splitParts = isSplit ? paymentMethod.split("+") : [];
+  const splitPaid = isSplit
+    ? splitParts.reduce((s, p) => s + (Number(p === "cash" ? cashAmt : p === "upi" ? upiAmt : cardAmt) || 0), 0)
+    : Number(paid) || 0;
 
   const totals = useMemo(() => {
     let sub = 0, tax = 0;
@@ -61,9 +74,12 @@ function BillingPage() {
     });
     const disc = Number(discount) || 0;
     const total = sub + tax - disc;
-    const balance = total - (Number(paid) || 0);
+    const paidNow = isSplit
+      ? splitParts.reduce((s, p) => s + (Number(p === "cash" ? cashAmt : p === "upi" ? upiAmt : cardAmt) || 0), 0)
+      : Number(paid) || 0;
+    const balance = total - paidNow;
     return { sub, tax, disc, total, balance };
-  }, [cart, discount, paid]);
+  }, [cart, discount, paid, cashAmt, upiAmt, cardAmt, paymentMethod]);
 
   function addProduct(p: any) {
     if (p.current_stock <= 0) return toast.error("Out of stock");
@@ -93,7 +109,11 @@ function BillingPage() {
     mutationFn: (data: any) => sell({ data }),
     onSuccess: (res: any) => {
       toast.success(`Sale complete — ${res.sale.invoice_number}`);
-      setCart([]); setPaid(""); setDiscount("0"); setCustomerId("");
+      const cust = customers.find((c: any) => c.id === customerId);
+      const branch = branches.find((b: any) => b.id === branchId);
+      setLastSale({ sale: res.sale, items: res.items, customer: cust, branch });
+      setReceiptOpen(true);
+      setCart([]); setPaid(""); setCashAmt(""); setUpiAmt(""); setCardAmt(""); setDiscount("0"); setCustomerId("");
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["pos-products"] });
     },
@@ -102,7 +122,8 @@ function BillingPage() {
 
   function checkout() {
     if (cart.length === 0) return toast.error("Cart is empty");
-    const paidNum = Number(paid) || 0;
+    const paidNum = isSplit ? splitPaid : Number(paid) || 0;
+    if (isSplit && paidNum <= 0) return toast.error("Enter split payment amounts");
     mutation.mutate({
       branch_id: branchId || null,
       customer_id: customerId || null,
@@ -219,6 +240,27 @@ function BillingPage() {
             </div>
           </div>
 
+          {isSplit && (
+            <div className="grid grid-cols-3 gap-2">
+              {splitParts.map((p) => (
+                <div key={p} className="space-y-1">
+                  <Label className="text-xs capitalize">{p} ₹</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={p === "cash" ? cashAmt : p === "upi" ? upiAmt : cardAmt}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (p === "cash") setCashAmt(v);
+                      else if (p === "upi") setUpiAmt(v);
+                      else setCardAmt(v);
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
           <Separator />
 
           <div className="space-y-1 text-sm">
@@ -228,19 +270,108 @@ function BillingPage() {
             <div className="flex justify-between text-lg font-bold pt-1 border-t"><span>Total</span><span>{formatINR(totals.total)}</span></div>
           </div>
 
-          <div className="space-y-1">
-            <Label className="text-xs">Paid ₹</Label>
-            <Input type="number" step="0.01" placeholder={formatINR(totals.total)} value={paid} onChange={(e) => setPaid(e.target.value)} />
-            {totals.balance > 0 && Number(paid) > 0 && (
-              <div className="text-xs text-warning-foreground bg-warning/15 px-2 py-1 rounded">Remaining {formatINR(totals.balance)} will be recorded as debt.</div>
-            )}
-          </div>
+          {!isSplit && (
+            <div className="space-y-1">
+              <Label className="text-xs">Paid ₹</Label>
+              <Input type="number" step="0.01" placeholder={formatINR(totals.total)} value={paid} onChange={(e) => setPaid(e.target.value)} />
+            </div>
+          )}
+          {totals.balance > 0.009 && (
+            <div className="text-xs text-warning-foreground bg-warning/15 px-2 py-1 rounded">
+              Remaining {formatINR(totals.balance)} will be recorded as debt{customerId ? "" : " — select a customer to track it"}.
+            </div>
+          )}
+          {totals.balance < -0.009 && (
+            <div className="text-xs text-primary bg-primary/10 px-2 py-1 rounded">Change to return: {formatINR(-totals.balance)}</div>
+          )}
 
           <Button className="w-full h-11 text-base" disabled={cart.length === 0 || mutation.isPending} onClick={checkout}>
             {mutation.isPending ? "Processing…" : `Charge ${formatINR(totals.total)}`}
           </Button>
         </CardContent>
       </Card>
+
+      <ReceiptDialog open={receiptOpen} onOpenChange={setReceiptOpen} data={lastSale} />
     </div>
+  );
+}
+
+function ReceiptDialog({ open, onOpenChange, data }: { open: boolean; onOpenChange: (v: boolean) => void; data: any }) {
+  if (!data) return null;
+  const { sale, items, customer, branch } = data;
+
+  function printReceipt() {
+    const node = document.getElementById("receipt-print");
+    if (!node) return;
+    const w = window.open("", "_blank", "width=380,height=640");
+    if (!w) return;
+    w.document.write(`<!doctype html><html><head><title>${sale.invoice_number}</title>
+      <style>
+        @page { margin: 8mm; }
+        body { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #000; }
+        h1,h2,h3,p { margin: 0; }
+        .center { text-align: center; }
+        .row { display: flex; justify-content: space-between; gap: 8px; }
+        .sep { border-top: 1px dashed #000; margin: 6px 0; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 2px 0; font-size: 11px; }
+        th:last-child, td:last-child { text-align: right; }
+        .total { font-size: 14px; font-weight: 700; }
+      </style></head><body>${node.innerHTML}</body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 250);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Receipt · {sale.invoice_number}</DialogTitle>
+        </DialogHeader>
+        <div id="receipt-print" className="text-xs font-mono">
+          <div className="center" style={{ textAlign: "center" }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700 }}>Login Garments</h2>
+            {branch && <p>{branch.name} ({branch.code})</p>}
+            <p>GST Invoice</p>
+          </div>
+          <div className="sep" />
+          <div className="row"><span>Invoice</span><span>{sale.invoice_number}</span></div>
+          <div className="row"><span>Date</span><span>{new Date(sale.created_at).toLocaleString("en-IN")}</span></div>
+          {customer && <div className="row"><span>Customer</span><span>{customer.name}</span></div>}
+          <div className="sep" />
+          <table>
+            <thead><tr><th>Item</th><th>Qty</th><th>Amt</th></tr></thead>
+            <tbody>
+              {items.map((it: any, i: number) => (
+                <tr key={i}>
+                  <td>{it.product_name}</td>
+                  <td>{it.quantity}</td>
+                  <td>{formatINR(it.line_total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="sep" />
+          <div className="row"><span>Subtotal</span><span>{formatINR(Number(sale.subtotal))}</span></div>
+          <div className="row"><span>GST</span><span>{formatINR(Number(sale.tax))}</span></div>
+          {Number(sale.discount) > 0 && <div className="row"><span>Discount</span><span>-{formatINR(Number(sale.discount))}</span></div>}
+          <div className="row total"><span>Total</span><span>{formatINR(Number(sale.total))}</span></div>
+          <div className="sep" />
+          <div className="row"><span>Payment</span><span style={{ textTransform: "uppercase" }}>{sale.payment_method}</span></div>
+          <div className="row"><span>Paid</span><span>{formatINR(Number(sale.paid))}</span></div>
+          {Number(sale.balance) > 0 && <div className="row"><span>Balance (Debt)</span><span>{formatINR(Number(sale.balance))}</span></div>}
+          <div className="sep" />
+          <div className="center" style={{ textAlign: "center" }}>
+            <p>Thank you for shopping!</p>
+            <p>Visit again</p>
+          </div>
+        </div>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+          <Button onClick={printReceipt}><Printer className="h-4 w-4 mr-2" />Print Bill</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
