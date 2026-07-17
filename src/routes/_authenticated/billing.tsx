@@ -317,6 +317,7 @@ function ReceiptDialog({ open, onOpenChange, data }: { open: boolean; onOpenChan
     const w = window.open("", "_blank", "width=420,height=720");
     if (!w) return;
     const logoAbs = `${window.location.origin}${LOGO_URL}`;
+    const html = node.innerHTML.split(LOGO_URL).join(logoAbs);
     w.document.write(`<!doctype html><html><head><title>Invoice ${sale.invoice_number}</title>
       <style>
         @page { margin: 8mm; }
@@ -341,7 +342,7 @@ function ReceiptDialog({ open, onOpenChange, data }: { open: boolean; onOpenChan
         .pay .row { display: flex; justify-content: space-between; padding: 2px 0; }
         .foot { text-align: center; margin-top: 14px; padding-top: 8px; border-top: 1px dashed #999; font-size: 10.5px; color: #555; }
         .foot b { color: #111; display: block; margin-bottom: 2px; font-size: 12px; }
-      </style></head><body><div class="wrap">${node.innerHTML.replace("__LOGO_SRC__", logoAbs)}</div></body></html>`);
+      </style></head><body><div class="wrap">${html}</div></body></html>`);
     w.document.close();
     w.focus();
     setTimeout(() => { w.print(); w.close(); }, 250);
@@ -355,7 +356,7 @@ function ReceiptDialog({ open, onOpenChange, data }: { open: boolean; onOpenChan
         </DialogHeader>
         <div id="receipt-print" className="text-[11px] text-foreground bg-white p-2 rounded max-h-[70vh] overflow-y-auto">
           <div className="head">
-            <img src="__LOGO_SRC__" alt="Login Garments" />
+            <img src={LOGO_URL} alt="Login Garments" />
             <div style={{ flex: 1 }}>
               <div className="brand">{COMPANY.name}</div>
               <div className="muted">{COMPANY.tagline}</div>
