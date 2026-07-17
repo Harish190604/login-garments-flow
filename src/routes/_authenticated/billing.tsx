@@ -15,6 +15,17 @@ import { toast } from "sonner";
 import { formatINR } from "@/lib/format";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Printer } from "lucide-react";
+import logoAsset from "@/assets/login-garments-logo.jpeg.asset.json";
+
+const LOGO_URL = logoAsset.url;
+const COMPANY = {
+  name: "Login Garments",
+  tagline: "Men's Clothing · Madurai & Thondi",
+  address: "Madurai · Thondi, Tamil Nadu, India",
+  phone: "+91 00000 00000",
+  email: "hello@logingarments.in",
+  gstin: "GSTIN: 33XXXXX0000X1Z0",
+};
 
 export const Route = createFileRoute("/_authenticated/billing")({
   component: BillingPage,
@@ -303,21 +314,34 @@ function ReceiptDialog({ open, onOpenChange, data }: { open: boolean; onOpenChan
   function printReceipt() {
     const node = document.getElementById("receipt-print");
     if (!node) return;
-    const w = window.open("", "_blank", "width=380,height=640");
+    const w = window.open("", "_blank", "width=420,height=720");
     if (!w) return;
-    w.document.write(`<!doctype html><html><head><title>${sale.invoice_number}</title>
+    const logoAbs = `${window.location.origin}${LOGO_URL}`;
+    w.document.write(`<!doctype html><html><head><title>Invoice ${sale.invoice_number}</title>
       <style>
         @page { margin: 8mm; }
-        body { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #000; }
-        h1,h2,h3,p { margin: 0; }
-        .center { text-align: center; }
-        .row { display: flex; justify-content: space-between; gap: 8px; }
-        .sep { border-top: 1px dashed #000; margin: 6px 0; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; padding: 2px 0; font-size: 11px; }
-        th:last-child, td:last-child { text-align: right; }
-        .total { font-size: 14px; font-weight: 700; }
-      </style></head><body>${node.innerHTML}</body></html>`);
+        * { box-sizing: border-box; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #111; margin: 0; }
+        .wrap { padding: 4px; }
+        .head { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+        .head img { height: 52px; width: auto; object-fit: contain; }
+        .brand { font-weight: 800; font-size: 18px; letter-spacing: 0.3px; }
+        .muted { color: #555; font-size: 10.5px; }
+        .title { text-align: center; margin: 10px 0 6px; font-weight: 700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; }
+        .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11px; margin-bottom: 8px; }
+        .meta b { color: #111; }
+        table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        th { background: #111; color: #fff; text-align: left; padding: 6px 6px; font-size: 11px; font-weight: 600; }
+        td { padding: 5px 6px; font-size: 11px; border-bottom: 1px solid #eee; }
+        th:last-child, td:last-child, th.num, td.num { text-align: right; }
+        .totals { margin-top: 8px; margin-left: auto; width: 55%; font-size: 11.5px; }
+        .totals .row { display: flex; justify-content: space-between; padding: 3px 0; }
+        .totals .grand { border-top: 1.5px solid #111; border-bottom: 1.5px solid #111; margin-top: 4px; padding: 6px 0; font-size: 13px; font-weight: 800; }
+        .pay { margin-top: 10px; padding: 8px; background: #f6f6f6; border-radius: 4px; font-size: 11px; }
+        .pay .row { display: flex; justify-content: space-between; padding: 2px 0; }
+        .foot { text-align: center; margin-top: 14px; padding-top: 8px; border-top: 1px dashed #999; font-size: 10.5px; color: #555; }
+        .foot b { color: #111; display: block; margin-bottom: 2px; font-size: 12px; }
+      </style></head><body><div class="wrap">${node.innerHTML.replace("__LOGO_SRC__", logoAbs)}</div></body></html>`);
     w.document.close();
     w.focus();
     setTimeout(() => { w.print(); w.close(); }, 250);
@@ -325,46 +349,65 @@ function ReceiptDialog({ open, onOpenChange, data }: { open: boolean; onOpenChan
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Receipt · {sale.invoice_number}</DialogTitle>
+          <DialogTitle>Tax Invoice · {sale.invoice_number}</DialogTitle>
         </DialogHeader>
-        <div id="receipt-print" className="text-xs font-mono">
-          <div className="center" style={{ textAlign: "center" }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700 }}>Login Garments</h2>
-            {branch && <p>{branch.name} ({branch.code})</p>}
-            <p>GST Invoice</p>
+        <div id="receipt-print" className="text-[11px] text-foreground bg-white p-2 rounded max-h-[70vh] overflow-y-auto">
+          <div className="head">
+            <img src="__LOGO_SRC__" alt="Login Garments" />
+            <div style={{ flex: 1 }}>
+              <div className="brand">{COMPANY.name}</div>
+              <div className="muted">{COMPANY.tagline}</div>
+              <div className="muted">{branch ? `${branch.name} (${branch.code}) · ` : ""}{COMPANY.phone}</div>
+              <div className="muted">{COMPANY.gstin}</div>
+            </div>
           </div>
-          <div className="sep" />
-          <div className="row"><span>Invoice</span><span>{sale.invoice_number}</span></div>
-          <div className="row"><span>Date</span><span>{new Date(sale.created_at).toLocaleString("en-IN")}</span></div>
-          {customer && <div className="row"><span>Customer</span><span>{customer.name}</span></div>}
-          <div className="sep" />
+          <div className="title">Tax Invoice</div>
+          <div className="meta">
+            <div><b>Invoice #:</b> {sale.invoice_number}</div>
+            <div style={{ textAlign: "right" }}><b>Date:</b> {new Date(sale.created_at).toLocaleString("en-IN")}</div>
+            <div><b>Bill To:</b> {customer?.name || "Walk-in customer"}</div>
+            <div style={{ textAlign: "right" }}>{customer?.phone || ""}</div>
+          </div>
           <table>
-            <thead><tr><th>Item</th><th>Qty</th><th>Amt</th></tr></thead>
+            <thead>
+              <tr>
+                <th style={{ width: "8%" }}>#</th>
+                <th>Item</th>
+                <th className="num">Qty</th>
+                <th className="num">Rate</th>
+                <th className="num">Amount</th>
+              </tr>
+            </thead>
             <tbody>
               {items.map((it: any, i: number) => (
                 <tr key={i}>
+                  <td>{i + 1}</td>
                   <td>{it.product_name}</td>
-                  <td>{it.quantity}</td>
-                  <td>{formatINR(it.line_total)}</td>
+                  <td className="num">{it.quantity}</td>
+                  <td className="num">{formatINR(Number(it.unit_price))}</td>
+                  <td className="num">{formatINR(Number(it.line_total))}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="sep" />
-          <div className="row"><span>Subtotal</span><span>{formatINR(Number(sale.subtotal))}</span></div>
-          <div className="row"><span>GST</span><span>{formatINR(Number(sale.tax))}</span></div>
-          {Number(sale.discount) > 0 && <div className="row"><span>Discount</span><span>-{formatINR(Number(sale.discount))}</span></div>}
-          <div className="row total"><span>Total</span><span>{formatINR(Number(sale.total))}</span></div>
-          <div className="sep" />
-          <div className="row"><span>Payment</span><span style={{ textTransform: "uppercase" }}>{sale.payment_method}</span></div>
-          <div className="row"><span>Paid</span><span>{formatINR(Number(sale.paid))}</span></div>
-          {Number(sale.balance) > 0 && <div className="row"><span>Balance (Debt)</span><span>{formatINR(Number(sale.balance))}</span></div>}
-          <div className="sep" />
-          <div className="center" style={{ textAlign: "center" }}>
-            <p>Thank you for shopping!</p>
-            <p>Visit again</p>
+          <div className="totals">
+            <div className="row"><span>Subtotal</span><span>{formatINR(Number(sale.subtotal))}</span></div>
+            <div className="row"><span>GST</span><span>{formatINR(Number(sale.tax))}</span></div>
+            {Number(sale.discount) > 0 && <div className="row"><span>Discount</span><span>-{formatINR(Number(sale.discount))}</span></div>}
+            <div className="row grand"><span>Grand Total</span><span>{formatINR(Number(sale.total))}</span></div>
+          </div>
+          <div className="pay">
+            <div className="row"><span>Payment Method</span><span style={{ textTransform: "uppercase", fontWeight: 600 }}>{sale.payment_method}</span></div>
+            <div className="row"><span>Amount Paid</span><span>{formatINR(Number(sale.paid))}</span></div>
+            {Number(sale.balance) > 0.009 && <div className="row" style={{ color: "#b91c1c", fontWeight: 700 }}><span>Balance Due (Debt)</span><span>{formatINR(Number(sale.balance))}</span></div>}
+            {Number(sale.balance) < -0.009 && <div className="row"><span>Change Returned</span><span>{formatINR(-Number(sale.balance))}</span></div>}
+          </div>
+          <div className="foot">
+            <b>Thank you for shopping with {COMPANY.name}!</b>
+            Goods once sold can be exchanged within 7 days with original invoice.
+            <div style={{ marginTop: 4 }}>{COMPANY.email} · {COMPANY.phone}</div>
           </div>
         </div>
         <DialogFooter className="gap-2 sm:gap-2">
