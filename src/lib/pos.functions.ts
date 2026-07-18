@@ -225,3 +225,100 @@ export const createSale = createServerFn({ method: "POST" })
 
     return { sale, items: itemsPersist };
   });
+
+// ---------- Stock Transfer ----------
+
+const transferInput = z.object({
+  source_branch_id: z.string().uuid(),
+  dest_branch_id: z.string().uuid(),
+  notes: z.string().optional().nullable(),
+  items: z.array(z.object({
+    product_id: z.string().uuid(),
+    quantity: z.number().int().positive(),
+  })).min(1),
+});
+
+export const listBranchProducts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { branchId: string }) => z.object({ branchId: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: rows, error } = await context.supabase
+      .from("products")
+      .select("id, sku, name, current_stock, branch_id, selling_price, purchase_price, gst_percent, discount_percent, minimum_stock, category_id, brand, color, size, barcode")
+      .eq("branch_id", data.branchId)
+      .gt("current_stock", 0)
+      .order("name");
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const transferStock = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => transferInput.parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase } = context;
+    if (data.source_branch_id === data.dest_branch_id) {
+      throw new Error("Source and destination branches must be different");
+    }
+
+    const { data: destBranch, error: destErr } = await supabase
+      .from("branches").select("id, code, name").eq("id", data.dest_branch_id).single();
+    if (destErr || !destBranch) throw new Error("Destination branch not found");
+
+    const results: Array<{ product_id: string; quantity: number; dest_product_id: string }> = [];
+
+    for (const item of data.items) {
+      const { data: src, error: srcErr } = await supabase
+        .from("products").select("*").eq("id", item.product_id).single();
+      if (srcErr || !src) throw new Error(`Product not found: ${item.product_id}`);
+      if (src.branch_id !== data.source_branch_id) throw new Error(`Product ${src.name} is not in the source branch`);
+      if ((src.current_stock ?? 0) < item.quantity) throw new Error(`Not enough stock for ${src.name} (have ${src.current_stock})`);
+
+      // Find or create a paired product row at destination branch.
+      // SKU is globally unique, so we suffix with the destination branch code.
+      const destSku = `${src.sku}-${destBranch.code}`;
+      let destProductId: string | null = null;
+
+      const { data: existing } = await supabase
+        .from("products").select("id, current_stock").eq("sku", destSku).maybeSingle();
+
+      if (existing) {
+        destProductId = existing.id;
+        const { error: updErr } = await supabase
+          .from("products")
+          .update({ current_stock: (existing.current_stock ?? 0) + item.quantity, branch_id: data.dest_branch_id })
+          .eq("id", existing.id);
+        if (updErr) throw new Error(updErr.message);
+      } else {
+        const { data: inserted, error: insErr } = await supabase
+          .from("products").insert({
+            sku: destSku,
+            barcode: null,
+            name: src.name,
+            category_id: src.category_id,
+            brand: src.brand,
+            color: src.color,
+            size: src.size,
+            purchase_price: src.purchase_price,
+            selling_price: src.selling_price,
+            gst_percent: src.gst_percent,
+            discount_percent: src.discount_percent,
+            current_stock: item.quantity,
+            minimum_stock: src.minimum_stock ?? 0,
+            branch_id: data.dest_branch_id,
+          }).select("id").single();
+        if (insErr) throw new Error(insErr.message);
+        destProductId = inserted!.id;
+      }
+
+      const { error: decErr } = await supabase
+        .from("products")
+        .update({ current_stock: (src.current_stock ?? 0) - item.quantity })
+        .eq("id", src.id);
+      if (decErr) throw new Error(decErr.message);
+
+      results.push({ product_id: src.id, quantity: item.quantity, dest_product_id: destProductId! });
+    }
+
+    return { transferred: results.length, items: results };
+  });
