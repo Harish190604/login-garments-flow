@@ -307,54 +307,131 @@ function BillingPage() {
   );
 }
 
+type PaperSize = "A4" | "Letter" | "Thermal80" | "Thermal58";
+const PAPER: Record<PaperSize, { label: string; css: string; widthPx: number }> = {
+  A4:        { label: "A4 (210 × 297 mm)",         css: "210mm 297mm",  widthPx: 794 },
+  Letter:    { label: "US Letter (8.5 × 11 in)",   css: "215.9mm 279.4mm", widthPx: 816 },
+  Thermal80: { label: "Thermal 80 mm",             css: "80mm auto",    widthPx: 302 },
+  Thermal58: { label: "Thermal 58 mm",             css: "58mm auto",    widthPx: 220 },
+};
+type MarginKey = "narrow" | "normal" | "wide" | "none";
+const MARGIN: Record<MarginKey, { label: string; mm: number }> = {
+  none:   { label: "None",   mm: 0 },
+  narrow: { label: "Narrow (5 mm)", mm: 5 },
+  normal: { label: "Normal (10 mm)", mm: 10 },
+  wide:   { label: "Wide (15 mm)", mm: 15 },
+};
+
+function buildReceiptDoc(innerHtml: string, paper: PaperSize, marginMm: number, title: string) {
+  const isThermal = paper === "Thermal80" || paper === "Thermal58";
+  const bodyFont = isThermal ? 11 : 12;
+  return `<!doctype html><html><head><meta charset="utf-8" /><title>${title}</title>
+    <style>
+      @page { size: ${PAPER[paper].css}; margin: ${marginMm}mm; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: ${bodyFont}px; color: #111; }
+      .wrap { padding: 0; }
+      .head { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+      .head img { height: ${isThermal ? 40 : 52}px; width: auto; object-fit: contain; }
+      .brand { font-weight: 800; font-size: ${isThermal ? 15 : 18}px; letter-spacing: 0.3px; }
+      .muted { color: #555; font-size: 10.5px; }
+      .title { text-align: center; margin: 10px 0 6px; font-weight: 700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; }
+      .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11px; margin-bottom: 8px; }
+      .meta b { color: #111; }
+      table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+      th { background: #111; color: #fff; text-align: left; padding: 6px 6px; font-size: 11px; font-weight: 600; }
+      td { padding: 5px 6px; font-size: 11px; border-bottom: 1px solid #eee; }
+      th:last-child, td:last-child, th.num, td.num { text-align: right; }
+      .totals { margin-top: 8px; margin-left: auto; width: ${isThermal ? 100 : 55}%; font-size: 11.5px; }
+      .totals .row { display: flex; justify-content: space-between; padding: 3px 0; }
+      .totals .grand { border-top: 1.5px solid #111; border-bottom: 1.5px solid #111; margin-top: 4px; padding: 6px 0; font-size: 13px; font-weight: 800; }
+      .pay { margin-top: 10px; padding: 8px; background: #f6f6f6; border-radius: 4px; font-size: 11px; }
+      .pay .row { display: flex; justify-content: space-between; padding: 2px 0; }
+      .foot { text-align: center; margin-top: 14px; padding-top: 8px; border-top: 1px dashed #999; font-size: 10.5px; color: #555; }
+      .foot b { color: #111; display: block; margin-bottom: 2px; font-size: 12px; }
+    </style></head><body><div class="wrap">${innerHtml}</div></body></html>`;
+}
+
 function ReceiptDialog({ open, onOpenChange, data }: { open: boolean; onOpenChange: (v: boolean) => void; data: any }) {
+  const [paper, setPaper] = useState<PaperSize>("A4");
+  const [margin, setMargin] = useState<MarginKey>("normal");
   if (!data) return null;
   const { sale, items, customer, branch } = data;
 
-  function printReceipt() {
+  function getPrintDoc() {
     const node = document.getElementById("receipt-print");
-    if (!node) return;
-    const w = window.open("", "_blank", "width=420,height=720");
-    if (!w) return;
+    if (!node) return "";
     const logoAbs = `${window.location.origin}${LOGO_URL}`;
     const html = node.innerHTML.split(LOGO_URL).join(logoAbs);
-    w.document.write(`<!doctype html><html><head><title>Invoice ${sale.invoice_number}</title>
-      <style>
-        @page { margin: 8mm; }
-        * { box-sizing: border-box; }
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #111; margin: 0; }
-        .wrap { padding: 4px; }
-        .head { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #111; padding-bottom: 8px; }
-        .head img { height: 52px; width: auto; object-fit: contain; }
-        .brand { font-weight: 800; font-size: 18px; letter-spacing: 0.3px; }
-        .muted { color: #555; font-size: 10.5px; }
-        .title { text-align: center; margin: 10px 0 6px; font-weight: 700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; }
-        .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11px; margin-bottom: 8px; }
-        .meta b { color: #111; }
-        table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-        th { background: #111; color: #fff; text-align: left; padding: 6px 6px; font-size: 11px; font-weight: 600; }
-        td { padding: 5px 6px; font-size: 11px; border-bottom: 1px solid #eee; }
-        th:last-child, td:last-child, th.num, td.num { text-align: right; }
-        .totals { margin-top: 8px; margin-left: auto; width: 55%; font-size: 11.5px; }
-        .totals .row { display: flex; justify-content: space-between; padding: 3px 0; }
-        .totals .grand { border-top: 1.5px solid #111; border-bottom: 1.5px solid #111; margin-top: 4px; padding: 6px 0; font-size: 13px; font-weight: 800; }
-        .pay { margin-top: 10px; padding: 8px; background: #f6f6f6; border-radius: 4px; font-size: 11px; }
-        .pay .row { display: flex; justify-content: space-between; padding: 2px 0; }
-        .foot { text-align: center; margin-top: 14px; padding-top: 8px; border-top: 1px dashed #999; font-size: 10.5px; color: #555; }
-        .foot b { color: #111; display: block; margin-bottom: 2px; font-size: 12px; }
-      </style></head><body><div class="wrap">${html}</div></body></html>`);
+    return buildReceiptDoc(html, paper, MARGIN[margin].mm, `Invoice ${sale.invoice_number}`);
+  }
+
+  function printReceipt() {
+    const doc = getPrintDoc();
+    if (!doc) return;
+    const w = window.open("", "_blank", "width=820,height=900");
+    if (!w) return;
+    w.document.write(doc);
     w.document.close();
     w.focus();
-    setTimeout(() => { w.print(); w.close(); }, 250);
+    setTimeout(() => { w.print(); }, 350);
   }
+
+  const previewDoc = open ? getPrintDoc() : "";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>Tax Invoice · {sale.invoice_number}</DialogTitle>
         </DialogHeader>
-        <div id="receipt-print" className="text-[11px] text-foreground bg-white p-2 rounded max-h-[70vh] overflow-y-auto">
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          <div className="space-y-1">
+            <Label className="text-xs">Paper size</Label>
+            <Select value={paper} onValueChange={(v) => setPaper(v as PaperSize)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(PAPER) as PaperSize[]).map((k) => (
+                  <SelectItem key={k} value={k}>{PAPER[k].label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Margins</Label>
+            <Select value={margin} onValueChange={(v) => setMargin(v as MarginKey)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(MARGIN) as MarginKey[]).map((k) => (
+                  <SelectItem key={k} value={k}>{MARGIN[k].label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="text-xs text-muted-foreground pb-2">
+            Preview below matches the paper size and margins that will be sent to your printer.
+          </div>
+        </div>
+
+        <div className="rounded-md border bg-muted/40 p-3 max-h-[60vh] overflow-auto flex justify-center">
+          <iframe
+            title="Print preview"
+            srcDoc={previewDoc}
+            style={{
+              width: `${PAPER[paper].widthPx}px`,
+              maxWidth: "100%",
+              height: paper === "Thermal58" || paper === "Thermal80" ? 520 : 900,
+              background: "white",
+              border: "1px solid hsl(var(--border, 0 0% 90%))",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+            }}
+          />
+        </div>
+
+        {/* Hidden source used to build the print document */}
+        <div id="receipt-print" className="hidden">
           <div className="head">
             <img src={LOGO_URL} alt="Login Garments" />
             <div style={{ flex: 1 }}>
