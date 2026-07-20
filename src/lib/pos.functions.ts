@@ -2,6 +2,26 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
+export const getMyProfile = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const [{ data: prof }, { data: roles }] = await Promise.all([
+      supabase.from("profiles").select("id, full_name, email, branch_id, branches(name,code)").eq("id", userId).maybeSingle(),
+      supabase.from("user_roles").select("role").eq("user_id", userId),
+    ]);
+    const roleList = (roles ?? []).map((r: any) => r.role);
+    return {
+      id: userId,
+      full_name: prof?.full_name ?? null,
+      email: prof?.email ?? null,
+      branch_id: prof?.branch_id ?? null,
+      branch: (prof as any)?.branches ?? null,
+      roles: roleList,
+      is_admin: roleList.includes("admin"),
+    };
+  });
+
 export const getDashboardStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -12,12 +32,12 @@ export const getDashboardStats = createServerFn({ method: "GET" })
     const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
     const [today, week, month, low, outstanding, recent, branches] = await Promise.all([
-      supabase.from("sales").select("total,created_at").gte("created_at", startToday),
-      supabase.from("sales").select("total").gte("created_at", startWeek),
-      supabase.from("sales").select("total").gte("created_at", startMonth),
+      supabase.from("sales").select("total,created_at").is("deleted_at", null).gte("created_at", startToday),
+      supabase.from("sales").select("total,created_at").is("deleted_at", null).gte("created_at", startWeek),
+      supabase.from("sales").select("total").is("deleted_at", null).gte("created_at", startMonth),
       supabase.from("products").select("id,name,current_stock,minimum_stock").lte("current_stock", 10).order("current_stock", { ascending: true }).limit(10),
-      supabase.from("customers").select("outstanding_debt"),
-      supabase.from("sales").select("id,invoice_number,total,payment_method,created_at,customers(name)").order("created_at", { ascending: false }).limit(8),
+      supabase.from("customers").select("outstanding_debt").is("deleted_at", null),
+      supabase.from("sales").select("id,invoice_number,total,payment_method,created_at,customers(name)").is("deleted_at", null).order("created_at", { ascending: false }).limit(8),
       supabase.from("branches").select("id,name,code"),
     ]);
 
@@ -82,7 +102,7 @@ export const listBranches = createServerFn({ method: "GET" })
 export const listCustomers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data } = await context.supabase.from("customers").select("*").order("created_at", { ascending: false }).limit(200);
+    const { data } = await context.supabase.from("customers").select("*").is("deleted_at", null).order("created_at", { ascending: false }).limit(500);
     return data ?? [];
   });
 
@@ -162,6 +182,17 @@ export const createSale = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
 
+    // Enforce branch: non-admin cashiers can only bill for their own branch
+    const [{ data: roles }, { data: prof }] = await Promise.all([
+      supabase.from("user_roles").select("role").eq("user_id", userId),
+      supabase.from("profiles").select("branch_id").eq("id", userId).maybeSingle(),
+    ]);
+    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    const effectiveBranch = isAdmin ? (data.branch_id ?? prof?.branch_id ?? null) : (prof?.branch_id ?? null);
+    if (!isAdmin && !effectiveBranch) {
+      throw new Error("No branch assigned. Ask an admin to assign your branch in Users.");
+    }
+
     // Compute totals
     let subtotal = 0;
     let tax = 0;
@@ -181,7 +212,7 @@ export const createSale = createServerFn({ method: "POST" })
 
     const { data: sale, error } = await supabase.from("sales").insert({
       invoice_number,
-      branch_id: data.branch_id ?? null,
+      branch_id: effectiveBranch,
       customer_id: data.customer_id ?? null,
       cashier_id: userId,
       subtotal: Number(subtotal.toFixed(2)),
@@ -321,4 +352,152 @@ export const transferStock = createServerFn({ method: "POST" })
     }
 
     return { transferred: results.length, items: results };
+  });
+// ---------- Sales listing / delete ----------
+
+export const listSales = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { from?: string | null; to?: string | null; search?: string | null } | undefined) => d ?? {})
+  .handler(async ({ context, data }) => {
+    let q = context.supabase
+      .from("sales")
+      .select("id, invoice_number, total, paid, balance, payment_method, status, created_at, branch_id, customer_id, customers(name, phone), branches(name, code)")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (data.from) q = q.gte("created_at", data.from);
+    if (data.to) q = q.lte("created_at", data.to);
+    if (data.search) q = q.ilike("invoice_number", `%${data.search}%`);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const getSale = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { data: sale, error } = await context.supabase
+      .from("sales")
+      .select("*, customers(name, phone), branches(name, code), sale_items(*)")
+      .eq("id", data.id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return sale;
+  });
+
+export const deleteSale = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", userId);
+    if (!(roles ?? []).some((r: any) => r.role === "admin")) throw new Error("Only admins can archive invoices.");
+    // Reverse outstanding debt on customer if the sale had a balance
+    const { data: sale } = await supabase.from("sales").select("customer_id, balance").eq("id", data.id).maybeSingle();
+    if (sale?.customer_id && Number(sale.balance ?? 0) > 0) {
+      const { data: cust } = await supabase.from("customers").select("outstanding_debt").eq("id", sale.customer_id).maybeSingle();
+      if (cust) {
+        const next = Math.max(0, Number(cust.outstanding_debt ?? 0) - Number(sale.balance));
+        await supabase.from("customers").update({ outstanding_debt: next }).eq("id", sale.customer_id);
+      }
+    }
+    const { error } = await supabase.from("sales").update({ deleted_at: new Date().toISOString() }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- Customer edit debt / delete ----------
+
+export const updateCustomerDebt = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid(), outstanding_debt: z.number().min(0) }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await context.supabase.from("customers").update({ outstanding_debt: data.outstanding_debt }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteCustomer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", userId);
+    if (!(roles ?? []).some((r: any) => r.role === "admin")) throw new Error("Only admins can archive customers.");
+    const { error } = await supabase.from("customers").update({ deleted_at: new Date().toISOString() }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- Reports / analytics ----------
+
+export const getReports = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { from?: string; to?: string } | undefined) => d ?? {})
+  .handler(async ({ context, data }) => {
+    const to = data.to ? new Date(data.to) : new Date();
+    const from = data.from ? new Date(data.from) : new Date(to.getTime() - 30 * 86400000);
+    const fromISO = from.toISOString();
+    const toISO = to.toISOString();
+
+    const { data: sales } = await context.supabase
+      .from("sales")
+      .select("id, total, paid, balance, tax, discount, payment_method, created_at, branch_id, branches(name,code), sale_items(product_id, product_name, quantity, line_total)")
+      .is("deleted_at", null)
+      .gte("created_at", fromISO)
+      .lte("created_at", toISO)
+      .order("created_at", { ascending: true });
+
+    const rows = sales ?? [];
+    const sum = (arr: any[], k: string) => arr.reduce((s, r) => s + Number(r[k] ?? 0), 0);
+
+    // Daily
+    const byDay = new Map<string, { date: string; revenue: number; tax: number; bills: number }>();
+    for (const r of rows) {
+      const key = new Date(r.created_at).toISOString().slice(0, 10);
+      const b = byDay.get(key) ?? { date: key, revenue: 0, tax: 0, bills: 0 };
+      b.revenue += Number(r.total); b.tax += Number(r.tax); b.bills += 1;
+      byDay.set(key, b);
+    }
+
+    // Payment method breakdown
+    const byMethod = new Map<string, number>();
+    for (const r of rows) byMethod.set(r.payment_method, (byMethod.get(r.payment_method) ?? 0) + Number(r.total));
+
+    // Branch revenue
+    const byBranch = new Map<string, { name: string; revenue: number; bills: number }>();
+    for (const r of rows) {
+      const key = (r as any).branches?.name ?? "Unassigned";
+      const b = byBranch.get(key) ?? { name: key, revenue: 0, bills: 0 };
+      b.revenue += Number(r.total); b.bills += 1;
+      byBranch.set(key, b);
+    }
+
+    // Top products
+    const byProduct = new Map<string, { name: string; qty: number; revenue: number }>();
+    for (const r of rows) {
+      for (const it of (r as any).sale_items ?? []) {
+        const p = byProduct.get(it.product_id) ?? { name: it.product_name, qty: 0, revenue: 0 };
+        p.qty += Number(it.quantity); p.revenue += Number(it.line_total);
+        byProduct.set(it.product_id, p);
+      }
+    }
+
+    return {
+      range: { from: fromISO, to: toISO },
+      totals: {
+        revenue: sum(rows, "total"),
+        collected: sum(rows, "paid"),
+        outstanding: sum(rows, "balance"),
+        tax: sum(rows, "tax"),
+        discount: sum(rows, "discount"),
+        bills: rows.length,
+      },
+      daily: Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date)),
+      byMethod: Array.from(byMethod.entries()).map(([method, amount]) => ({ method, amount })),
+      byBranch: Array.from(byBranch.values()).sort((a, b) => b.revenue - a.revenue),
+      topProducts: Array.from(byProduct.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10),
+    };
   });

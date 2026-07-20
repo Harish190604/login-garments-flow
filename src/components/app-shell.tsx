@@ -16,6 +16,7 @@ import {
   LogOut,
   Search,
   Bell,
+  ShieldCheck,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import logoAsset from "@/assets/login-garments-logo.jpeg.asset.json";
@@ -44,6 +45,7 @@ const NAV: NavItem[] = [
   { to: "/debts", label: "Debts", icon: Wallet },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/branches", label: "Branches", icon: Store },
+  { to: "/users", label: "Users", icon: ShieldCheck },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -74,7 +76,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         <div className="h-16 flex items-center gap-3 px-5 border-b border-sidebar-border">
-          <div className="h-10 w-10 rounded-lg overflow-hidden bg-black grid place-items-center shrink-0">
+          <div className="h-10 w-10 rounded-lg overflow-hidden bg-white ring-1 ring-sidebar-border grid place-items-center shrink-0 p-1">
             <img src={logoAsset.url} alt="Login Garments" className="h-full w-full object-contain" />
           </div>
           <div className="min-w-0">
