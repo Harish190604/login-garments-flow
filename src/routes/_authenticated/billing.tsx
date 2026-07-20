@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listProducts, listCustomers, listBranches, createSale } from "@/lib/pos.functions";
+import { listProducts, listCustomers, listBranches, createSale, getMyProfile } from "@/lib/pos.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Search, Trash2, Plus, Minus, ShoppingCart, Barcode as BarcodeIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { formatINR } from "@/lib/format";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -47,6 +47,7 @@ function BillingPage() {
   const listC = useServerFn(listCustomers);
   const listB = useServerFn(listBranches);
   const sell = useServerFn(createSale);
+  const meFn = useServerFn(getMyProfile);
 
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -60,6 +61,15 @@ function BillingPage() {
   const [cardAmt, setCardAmt] = useState<string>("");
   const [lastSale, setLastSale] = useState<any>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const { data: profile } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
+  const isAdmin = profile?.is_admin ?? true;
+
+  // Non-admin cashiers are locked to their assigned branch.
+  useEffect(() => {
+    if (profile && !profile.is_admin && profile.branch_id) setBranchId(profile.branch_id);
+  }, [profile]);
 
   const { data: products = [] } = useQuery({
     queryKey: ["pos-products", search, branchId],
@@ -109,6 +119,20 @@ function BillingPage() {
         discount_percent: Number(p.discount_percent || 0),
       }];
     });
+  }
+
+  // Barcode scanner: Enter key at the search box adds the exact match.
+  function handleScanKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const q = search.trim();
+    if (!q) return;
+    const exact = products.find((p: any) => p.barcode === q || p.sku === q)
+      ?? (products.length === 1 ? products[0] : null);
+    if (!exact) { toast.error("No product found for that code"); return; }
+    addProduct(exact);
+    setSearch("");
+    setTimeout(() => searchRef.current?.focus(), 0);
   }
 
   function updateQty(id: string, delta: number) {
