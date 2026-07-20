@@ -182,6 +182,17 @@ export const createSale = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
 
+    // Enforce branch: non-admin cashiers can only bill for their own branch
+    const [{ data: roles }, { data: prof }] = await Promise.all([
+      supabase.from("user_roles").select("role").eq("user_id", userId),
+      supabase.from("profiles").select("branch_id").eq("id", userId).maybeSingle(),
+    ]);
+    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    const effectiveBranch = isAdmin ? (data.branch_id ?? prof?.branch_id ?? null) : (prof?.branch_id ?? null);
+    if (!isAdmin && !effectiveBranch) {
+      throw new Error("No branch assigned. Ask an admin to assign your branch in Users.");
+    }
+
     // Compute totals
     let subtotal = 0;
     let tax = 0;
@@ -201,7 +212,7 @@ export const createSale = createServerFn({ method: "POST" })
 
     const { data: sale, error } = await supabase.from("sales").insert({
       invoice_number,
-      branch_id: data.branch_id ?? null,
+      branch_id: effectiveBranch,
       customer_id: data.customer_id ?? null,
       cashier_id: userId,
       subtotal: Number(subtotal.toFixed(2)),
