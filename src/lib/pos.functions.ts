@@ -2,6 +2,26 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
+export const getMyProfile = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const [{ data: prof }, { data: roles }] = await Promise.all([
+      supabase.from("profiles").select("id, full_name, email, branch_id, branches(name,code)").eq("id", userId).maybeSingle(),
+      supabase.from("user_roles").select("role").eq("user_id", userId),
+    ]);
+    const roleList = (roles ?? []).map((r: any) => r.role);
+    return {
+      id: userId,
+      full_name: prof?.full_name ?? null,
+      email: prof?.email ?? null,
+      branch_id: prof?.branch_id ?? null,
+      branch: (prof as any)?.branches ?? null,
+      roles: roleList,
+      is_admin: roleList.includes("admin"),
+    };
+  });
+
 export const getDashboardStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -12,12 +32,12 @@ export const getDashboardStats = createServerFn({ method: "GET" })
     const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
     const [today, week, month, low, outstanding, recent, branches] = await Promise.all([
-      supabase.from("sales").select("total,created_at").gte("created_at", startToday),
-      supabase.from("sales").select("total").gte("created_at", startWeek),
-      supabase.from("sales").select("total").gte("created_at", startMonth),
+      supabase.from("sales").select("total,created_at").is("deleted_at", null).gte("created_at", startToday),
+      supabase.from("sales").select("total,created_at").is("deleted_at", null).gte("created_at", startWeek),
+      supabase.from("sales").select("total").is("deleted_at", null).gte("created_at", startMonth),
       supabase.from("products").select("id,name,current_stock,minimum_stock").lte("current_stock", 10).order("current_stock", { ascending: true }).limit(10),
-      supabase.from("customers").select("outstanding_debt"),
-      supabase.from("sales").select("id,invoice_number,total,payment_method,created_at,customers(name)").order("created_at", { ascending: false }).limit(8),
+      supabase.from("customers").select("outstanding_debt").is("deleted_at", null),
+      supabase.from("sales").select("id,invoice_number,total,payment_method,created_at,customers(name)").is("deleted_at", null).order("created_at", { ascending: false }).limit(8),
       supabase.from("branches").select("id,name,code"),
     ]);
 
@@ -82,7 +102,7 @@ export const listBranches = createServerFn({ method: "GET" })
 export const listCustomers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data } = await context.supabase.from("customers").select("*").order("created_at", { ascending: false }).limit(200);
+    const { data } = await context.supabase.from("customers").select("*").is("deleted_at", null).order("created_at", { ascending: false }).limit(500);
     return data ?? [];
   });
 
