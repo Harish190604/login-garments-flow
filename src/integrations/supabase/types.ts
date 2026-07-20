@@ -75,6 +75,7 @@ export type Database = {
         Row: {
           address: string | null
           created_at: string
+          deleted_at: string | null
           email: string | null
           id: string
           loyalty_points: number
@@ -86,6 +87,7 @@ export type Database = {
         Insert: {
           address?: string | null
           created_at?: string
+          deleted_at?: string | null
           email?: string | null
           id?: string
           loyalty_points?: number
@@ -97,6 +99,7 @@ export type Database = {
         Update: {
           address?: string | null
           created_at?: string
+          deleted_at?: string | null
           email?: string | null
           id?: string
           loyalty_points?: number
@@ -188,6 +191,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          branch_id: string | null
           created_at: string
           email: string | null
           full_name: string | null
@@ -197,6 +201,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          branch_id?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
@@ -206,6 +211,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          branch_id?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
@@ -213,7 +219,15 @@ export type Database = {
           phone?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sale_items: {
         Row: {
@@ -279,6 +293,7 @@ export type Database = {
           cashier_id: string | null
           created_at: string
           customer_id: string | null
+          deleted_at: string | null
           discount: number
           id: string
           invoice_number: string
@@ -296,6 +311,7 @@ export type Database = {
           cashier_id?: string | null
           created_at?: string
           customer_id?: string | null
+          deleted_at?: string | null
           discount?: number
           id?: string
           invoice_number: string
@@ -313,6 +329,7 @@ export type Database = {
           cashier_id?: string | null
           created_at?: string
           customer_id?: string | null
+          deleted_at?: string | null
           discount?: number
           id?: string
           invoice_number?: string
@@ -370,6 +387,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_user_branch: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
