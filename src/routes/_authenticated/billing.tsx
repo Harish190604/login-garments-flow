@@ -176,15 +176,29 @@ function BillingPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input autoFocus placeholder="Scan barcode or search products…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-11" />
+            <Input
+              ref={searchRef}
+              autoFocus
+              placeholder="Scan barcode or search products… (press Enter to add)"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleScanKey}
+              className="pl-9 h-11"
+            />
           </div>
-          <Select value={branchId} onValueChange={setBranchId}>
-            <SelectTrigger className="w-40 h-11"><SelectValue placeholder="All branches" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All branches</SelectItem>
-              {branches.map((b: any) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {isAdmin ? (
+            <Select value={branchId} onValueChange={(v) => setBranchId(v === "__all__" ? "" : v)}>
+              <SelectTrigger className="w-40 h-11"><SelectValue placeholder="All branches" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All branches</SelectItem>
+                {branches.map((b: any) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge variant="secondary" className="h-11 px-3 text-sm">
+              Branch: {profile?.branch?.name ?? "Unassigned"}
+            </Badge>
+          )}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
