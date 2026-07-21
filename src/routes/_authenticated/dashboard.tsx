@@ -5,9 +5,12 @@ import { getDashboardStats } from "@/lib/pos.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { TrendingUp, IndianRupee, Receipt, AlertTriangle, Wallet, ShoppingBag } from "lucide-react";
+import { TrendingUp, IndianRupee, Receipt, AlertTriangle, Wallet, ShoppingBag, MessageCircle } from "lucide-react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { formatINR } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: DashboardPage,
@@ -40,13 +43,69 @@ function KpiCard({ label, value, hint, icon: Icon, tone }: { label: string; valu
 function DashboardPage() {
   const fn = useServerFn(getDashboardStats);
   const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: () => fn() });
+  const [waNumber, setWaNumber] = useState("");
+  useEffect(() => {
+    setWaNumber(localStorage.getItem("admin_wa_number") ?? "");
+  }, []);
+  const saveWa = (v: string) => { setWaNumber(v); localStorage.setItem("admin_wa_number", v); };
+
+  const buildSummary = () => {
+    const today = new Date().toLocaleDateString("en-IN");
+    const lines = [
+      `*Login Garments — Daily Summary*`,
+      `Date: ${today}`,
+      ``,
+      `Today's Sales: ${formatINR(data?.todaySales ?? 0)}`,
+      `Bills: ${data?.todayCount ?? 0}`,
+      `This Week: ${formatINR(data?.weekSales ?? 0)}`,
+      `This Month: ${formatINR(data?.monthSales ?? 0)}`,
+      `Pending Debts: ${formatINR(data?.pendingDebts ?? 0)}`,
+    ];
+    const low = data?.lowStock ?? [];
+    if (low.length > 0) {
+      lines.push(``, `⚠️ Low stock (${low.length}):`);
+      low.slice(0, 8).forEach((p: any) => lines.push(`• ${p.name} — ${p.current_stock} left`));
+    }
+    return lines.join("\n");
+  };
+  const sendWhatsApp = () => {
+    const num = waNumber.replace(/[^\d]/g, "");
+    const text = encodeURIComponent(buildSummary());
+    const url = num ? `https://wa.me/${num}?text=${text}` : `https://wa.me/?text=${text}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Overview across Madurai & Thondi branches.</p>
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Overview across Madurai & Thondi branches.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            value={waNumber}
+            onChange={(e) => saveWa(e.target.value)}
+            placeholder="Admin WhatsApp (e.g. 919876543210)"
+            className="w-56"
+          />
+          <Button onClick={sendWhatsApp} className="bg-success hover:bg-success/90 text-success-foreground">
+            <MessageCircle className="h-4 w-4 mr-1" /> Send summary
+          </Button>
+        </div>
       </div>
+
+      {(data?.lowStock ?? []).length > 0 && (
+        <Card className="border-warning/40 bg-warning/10">
+          <CardContent className="p-3 flex items-center gap-2 text-sm">
+            <AlertTriangle className="h-4 w-4 text-warning-foreground" />
+            <span className="font-medium">Low stock reminder:</span>
+            <span className="text-muted-foreground">
+              {(data?.lowStock ?? []).length} product{(data?.lowStock ?? []).length === 1 ? "" : "s"} at or below minimum.
+            </span>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <KpiCard label="Today's Sales" value={formatINR(data?.todaySales ?? 0)} hint={`${data?.todayCount ?? 0} bills`} icon={IndianRupee} tone="primary" />
