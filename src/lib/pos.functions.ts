@@ -419,6 +419,26 @@ export const updateCustomerDebt = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const recordDebtPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({
+    id: z.string().uuid(),
+    amount: z.number().positive(),
+    method: z.enum(["cash", "upi", "card"]),
+    note: z.string().optional().nullable(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase } = context;
+    const { data: cust, error: cErr } = await supabase.from("customers").select("outstanding_debt, name").eq("id", data.id).maybeSingle();
+    if (cErr || !cust) throw new Error("Customer not found");
+    const current = Number(cust.outstanding_debt ?? 0);
+    if (current <= 0) throw new Error("This customer has no outstanding debt.");
+    const next = Math.max(0, current - data.amount);
+    const { error } = await supabase.from("customers").update({ outstanding_debt: next }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, previous: current, remaining: next, paid: data.amount, method: data.method };
+  });
+
 export const deleteCustomer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
