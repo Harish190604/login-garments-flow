@@ -121,6 +121,7 @@ const productInput = z.object({
   current_stock: z.number().int().nonnegative(),
   minimum_stock: z.number().int().nonnegative(),
   branch_id: z.string().uuid().optional().nullable(),
+  image_url: z.string().url().optional().nullable().or(z.literal("")),
 });
 
 export const createProduct = createServerFn({ method: "POST" })
@@ -152,7 +153,9 @@ export const createCustomer = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
-    const payload = { ...data, email: data.email || null };
+    const { supabase, userId } = context;
+    const { data: prof } = await supabase.from("profiles").select("branch_id").eq("id", userId).maybeSingle();
+    const payload = { ...data, email: data.email || null, branch_id: prof?.branch_id ?? null };
     const { error, data: row } = await context.supabase.from("customers").insert(payload).select("*").single();
     if (error) throw new Error(error.message);
     return row;
