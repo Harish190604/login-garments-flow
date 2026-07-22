@@ -8,6 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShieldCheck, Users, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useServerFn } from "@tanstack/react-start";
+import { purgeArchived } from "@/lib/pos.functions";
+import { Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -38,6 +41,18 @@ function SettingsPage() {
   const isAdmin = roles.includes("admin");
   const saveStore = () => { localStorage.setItem("store_info", JSON.stringify(store)); toast.success("Store info saved"); };
   const saveWa = () => { localStorage.setItem("admin_wa_number", waNumber); toast.success("WhatsApp number saved"); };
+  const purge = useServerFn(purgeArchived);
+  const [purging, setPurging] = useState(false);
+  async function clearDrafts() {
+    if (!confirm("Permanently delete all archived invoices and customers? This cannot be undone.")) return;
+    setPurging(true);
+    try {
+      const r = await purge();
+      toast.success(`Cleared ${r.sales} invoices, ${r.sale_items} line items and ${r.customers} customers.`);
+    } catch (e: any) {
+      toast.error(e.message || "Failed");
+    } finally { setPurging(false); }
+  }
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -89,6 +104,11 @@ function SettingsPage() {
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">Create staff accounts, assign branches (Madurai / Thondi), reset passwords, or remove users.</p>
             <Button asChild><Link to="/users">Manage users</Link></Button>
+            <div className="pt-3 mt-3 border-t space-y-2">
+              <div className="text-sm font-semibold flex items-center gap-2"><Trash2 className="h-4 w-4" /> Clear drafts</div>
+              <p className="text-xs text-muted-foreground">Permanently delete every archived invoice, its line items, and every archived customer. Use this to keep the database clean.</p>
+              <Button variant="destructive" onClick={clearDrafts} disabled={purging}>{purging ? "Clearing…" : "Clear all archived data"}</Button>
+            </div>
           </CardContent>
         </Card>
       )}

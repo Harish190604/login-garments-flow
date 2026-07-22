@@ -121,6 +121,7 @@ const productInput = z.object({
   current_stock: z.number().int().nonnegative(),
   minimum_stock: z.number().int().nonnegative(),
   branch_id: z.string().uuid().optional().nullable(),
+  image_url: z.string().url().optional().nullable().or(z.literal("")),
 });
 
 export const createProduct = createServerFn({ method: "POST" })
@@ -152,7 +153,9 @@ export const createCustomer = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
-    const payload = { ...data, email: data.email || null };
+    const { supabase, userId } = context;
+    const { data: prof } = await supabase.from("profiles").select("branch_id").eq("id", userId).maybeSingle();
+    const payload = { ...data, email: data.email || null, branch_id: prof?.branch_id ?? null };
     const { error, data: row } = await context.supabase.from("customers").insert(payload).select("*").single();
     if (error) throw new Error(error.message);
     return row;
@@ -520,4 +523,142 @@ export const getReports = createServerFn({ method: "GET" })
       byBranch: Array.from(byBranch.values()).sort((a, b) => b.revenue - a.revenue),
       topProducts: Array.from(byProduct.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10),
     };
+  });
+
+// ---------- Expenses ----------
+
+export const listExpenses = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { from?: string; to?: string } | undefined) => d ?? {})
+  .handler(async ({ context, data }) => {
+    let q = context.supabase
+      .from("expenses")
+      .select("*, branches(name, code)")
+      .order("spent_on", { ascending: false })
+      .limit(500);
+    if (data.from) q = q.gte("spent_on", data.from);
+    if (data.to) q = q.lte("spent_on", data.to);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const createExpense = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({
+    category: z.string().min(1),
+    description: z.string().optional().nullable(),
+    amount: z.number().positive(),
+    spent_on: z.string().min(1),
+    branch_id: z.string().uuid().nullable().optional(),
+  }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", userId);
+    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    let branch = data.branch_id ?? null;
+    if (!isAdmin) {
+      const { data: prof } = await supabase.from("profiles").select("branch_id").eq("id", userId).maybeSingle();
+      branch = prof?.branch_id ?? null;
+    }
+    const { data: row, error } = await supabase.from("expenses").insert({
+      category: data.category,
+      description: data.description ?? null,
+      amount: data.amount,
+      spent_on: data.spent_on,
+      branch_id: branch,
+      created_by: userId,
+    }).select("*").single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const deleteExpense = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", userId);
+    if (!(roles ?? []).some((r: any) => r.role === "admin")) throw new Error("Only admins can delete expenses.");
+    const { error } = await supabase.from("expenses").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getExpenseStats = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().slice(0, 10);
+    const startWeek = new Date(now.getTime() - 6 * 86400000).toISOString().slice(0, 10);
+    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    const startMonthMinus5 = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().slice(0, 10);
+
+    const { data: rows } = await context.supabase
+      .from("expenses").select("amount, category, spent_on, branch_id, branches(name)")
+      .gte("spent_on", startMonthMinus5).order("spent_on", { ascending: true });
+
+    const list = rows ?? [];
+    const sum = (arr: any[]) => arr.reduce((s, r) => s + Number(r.amount ?? 0), 0);
+
+    const today = list.filter((r: any) => r.spent_on >= startToday);
+    const week = list.filter((r: any) => r.spent_on >= startWeek);
+    const month = list.filter((r: any) => r.spent_on >= startMonth);
+
+    const byCategory = new Map<string, number>();
+    for (const r of month) byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + Number(r.amount));
+
+    const byMonth = new Map<string, number>();
+    for (const r of list) {
+      const key = String(r.spent_on).slice(0, 7);
+      byMonth.set(key, (byMonth.get(key) ?? 0) + Number(r.amount));
+    }
+
+    const byBranch = new Map<string, number>();
+    for (const r of month) {
+      const key = (r as any).branches?.name ?? "Unassigned";
+      byBranch.set(key, (byBranch.get(key) ?? 0) + Number(r.amount));
+    }
+
+    return {
+      today: sum(today),
+      week: sum(week),
+      month: sum(month),
+      byCategory: Array.from(byCategory.entries()).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
+      byMonth: Array.from(byMonth.entries()).map(([month, amount]) => ({ month, amount })).sort((a, b) => a.month.localeCompare(b.month)),
+      byBranch: Array.from(byBranch.entries()).map(([branch, amount]) => ({ branch, amount })),
+    };
+  });
+
+// ---------- Admin: clear drafts / purge archived ----------
+
+export const purgeArchived = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", userId);
+    if (!(roles ?? []).some((r: any) => r.role === "admin")) throw new Error("Admin only.");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Delete sale_items of archived sales, then archived sales, then archived customers.
+    const { data: archivedSales } = await supabaseAdmin.from("sales").select("id").not("deleted_at", "is", null);
+    const ids = (archivedSales ?? []).map((s: any) => s.id);
+    let items = 0, sales = 0, custs = 0;
+    if (ids.length) {
+      const r1 = await supabaseAdmin.from("sale_items").delete().in("sale_id", ids).select("id");
+      items = r1.data?.length ?? 0;
+      const r2 = await supabaseAdmin.from("sales").delete().in("id", ids).select("id");
+      sales = r2.data?.length ?? 0;
+    }
+    const r3 = await supabaseAdmin.from("customers").delete().not("deleted_at", "is", null).select("id");
+    custs = r3.data?.length ?? 0;
+    return { ok: true, sales, sale_items: items, customers: custs };
+  });
+
+export const updateProductImage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid(), image_url: z.string().url().nullable() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await context.supabase.from("products").update({ image_url: data.image_url }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

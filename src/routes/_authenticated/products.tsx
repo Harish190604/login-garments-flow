@@ -10,10 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Package } from "lucide-react";
-import { useState } from "react";
+import { Plus, Search, Package, Printer, Barcode as BarcodeIcon } from "lucide-react";
+import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { formatINR } from "@/lib/format";
+import { Barcode, printBarcodes } from "@/components/barcode";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export const Route = createFileRoute("/_authenticated/products")({
   component: ProductsPage,
@@ -28,6 +30,8 @@ function ProductsPage() {
 
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [barcodeCategory, setBarcodeCategory] = useState<string>("");
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["products", search],
@@ -64,7 +68,35 @@ function ProductsPage() {
       current_stock: Number(f.get("current_stock") || 0),
       minimum_stock: Number(f.get("minimum_stock") || 5),
       branch_id: String(f.get("branch_id") || "") || null,
+      image_url: String(f.get("image_url") || "") || null,
     });
+  }
+
+  const selectedProducts = useMemo(
+    () => products.filter((p: any) => selected[p.id] && p.barcode),
+    [products, selected],
+  );
+
+  function printSelected() {
+    if (selectedProducts.length === 0) {
+      toast.error("Select at least one product with a barcode.");
+      return;
+    }
+    printBarcodes(selectedProducts.map((p: any) => ({
+      name: p.name, barcode: p.barcode, sku: p.sku, price: Number(p.selling_price),
+    })));
+  }
+
+  function printByCategory() {
+    if (!barcodeCategory) {
+      toast.error("Choose a category first.");
+      return;
+    }
+    const items = products.filter((p: any) => p.category_id === barcodeCategory && p.barcode);
+    if (!items.length) { toast.error("No products in that category."); return; }
+    printBarcodes(items.map((p: any) => ({
+      name: p.name, barcode: p.barcode, sku: p.sku, price: Number(p.selling_price),
+    })));
   }
 
   return (
@@ -74,6 +106,13 @@ function ProductsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Products</h1>
           <p className="text-sm text-muted-foreground">Manage catalog, pricing, GST and stock.</p>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={barcodeCategory} onValueChange={setBarcodeCategory}>
+            <SelectTrigger className="w-48"><SelectValue placeholder="Barcode by category…" /></SelectTrigger>
+            <SelectContent>{categories.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+          </Select>
+          <Button variant="outline" onClick={printByCategory}><Printer className="h-4 w-4 mr-1" /> Print category</Button>
+          <Button variant="outline" onClick={printSelected}><BarcodeIcon className="h-4 w-4 mr-1" /> Print selected ({selectedProducts.length})</Button>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="h-4 w-4 mr-1" /> Add product</Button>
@@ -82,8 +121,9 @@ function ProductsPage() {
             <DialogHeader><DialogTitle>New product</DialogTitle></DialogHeader>
             <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>SKU *</Label><Input name="sku" required /></div>
-              <div className="space-y-1.5"><Label>Barcode</Label><Input name="barcode" /></div>
+              <div className="space-y-1.5"><Label>Barcode</Label><Input name="barcode" placeholder="Auto-generated if empty" /></div>
               <div className="space-y-1.5 col-span-2"><Label>Name *</Label><Input name="name" required /></div>
+              <div className="space-y-1.5 col-span-2"><Label>Image URL</Label><Input name="image_url" type="url" placeholder="https://…" /></div>
               <div className="space-y-1.5">
                 <Label>Category</Label>
                 <Select name="category_id"><SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
@@ -112,6 +152,7 @@ function ProductsPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -123,17 +164,20 @@ function ProductsPage() {
           <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
+                <TableHead className="w-8"></TableHead>
+                <TableHead className="w-14">Image</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>SKU</TableHead>
+                <TableHead>Barcode</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Branch</TableHead>
                 <TableHead className="text-right">Price</TableHead>
                 <TableHead className="text-right">Stock</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">Loading…</TableCell></TableRow>}
+                {isLoading && <TableRow><TableCell colSpan={9} className="text-center py-8 text-sm text-muted-foreground">Loading…</TableCell></TableRow>}
                 {!isLoading && products.length === 0 && (
-                  <TableRow><TableCell colSpan={6}>
+                  <TableRow><TableCell colSpan={9}>
                     <div className="flex flex-col items-center gap-2 py-10 text-center">
                       <Package className="h-8 w-8 text-muted-foreground" />
                       <div className="text-sm font-medium">No products yet</div>
@@ -147,10 +191,31 @@ function ProductsPage() {
                   return (
                     <TableRow key={p.id}>
                       <TableCell>
+                        <Checkbox checked={!!selected[p.id]} onCheckedChange={(v) => setSelected((s) => ({ ...s, [p.id]: !!v }))} />
+                      </TableCell>
+                      <TableCell>
+                        {p.image_url ? (
+                          <img src={p.image_url} alt={p.name} className="h-10 w-10 rounded-md object-cover border" />
+                        ) : (
+                          <div className="h-10 w-10 rounded-md bg-muted grid place-items-center text-muted-foreground"><Package className="h-4 w-4" /></div>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <div className="font-medium">{p.name}</div>
                         <div className="text-xs text-muted-foreground">{[p.brand, p.color, p.size].filter(Boolean).join(" · ")}</div>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{p.sku}</TableCell>
+                      <TableCell>
+                        {p.barcode ? (
+                          <div className="flex flex-col items-start gap-1">
+                            <Barcode value={p.barcode} height={28} fontSize={9} />
+                            <button
+                              className="text-[10px] text-primary hover:underline"
+                              onClick={() => printBarcodes([{ name: p.name, barcode: p.barcode, sku: p.sku, price: Number(p.selling_price) }])}
+                            >Print</button>
+                          </div>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
                       <TableCell>{p.categories?.name ?? "—"}</TableCell>
                       <TableCell>{p.branches?.code ?? "—"}</TableCell>
                       <TableCell className="text-right font-medium">{formatINR(Number(p.selling_price))}</TableCell>
