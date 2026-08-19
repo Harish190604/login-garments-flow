@@ -28,6 +28,7 @@ const COMPANY = {
 };
 
 export const Route = createFileRoute("/_authenticated/billing")({
+  validateSearch: (s: Record<string, unknown>) => ({ scan: typeof s.scan === "string" ? s.scan : undefined }),
   component: BillingPage,
 });
 
@@ -43,6 +44,8 @@ type CartItem = {
 
 function BillingPage() {
   const qc = useQueryClient();
+  const { scan } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const listP = useServerFn(listProducts);
   const listC = useServerFn(listCustomers);
   const listB = useServerFn(listBranches);
@@ -62,6 +65,7 @@ function BillingPage() {
   const [lastSale, setLastSale] = useState<any>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const scannedRef = useRef<string | null>(null);
 
   const { data: profile } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const isAdmin = profile?.is_admin ?? true;
