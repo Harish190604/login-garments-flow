@@ -99,7 +99,7 @@ function BillingPage() {
       toast.error("No product found for that code");
     }
     setSearch("");
-    navigate({ search: {}, replace: true });
+    navigate({ search: () => ({ scan: undefined }), replace: true });
     setTimeout(() => searchRef.current?.focus(), 0);
   }, [scan, products, search]);
 
