@@ -28,6 +28,7 @@ const COMPANY = {
 };
 
 export const Route = createFileRoute("/_authenticated/billing")({
+  validateSearch: (s: Record<string, unknown>) => ({ scan: typeof s.scan === "string" ? s.scan : undefined }),
   component: BillingPage,
 });
 
@@ -43,6 +44,8 @@ type CartItem = {
 
 function BillingPage() {
   const qc = useQueryClient();
+  const { scan } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const listP = useServerFn(listProducts);
   const listC = useServerFn(listCustomers);
   const listB = useServerFn(listBranches);
@@ -62,6 +65,7 @@ function BillingPage() {
   const [lastSale, setLastSale] = useState<any>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const scannedRef = useRef<string | null>(null);
 
   const { data: profile } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const isAdmin = profile?.is_admin ?? true;
@@ -77,6 +81,27 @@ function BillingPage() {
   });
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: () => listC() });
   const { data: branches = [] } = useQuery({ queryKey: ["branches"], queryFn: () => listB() });
+
+  // Scanned from the Products page: /billing?scan=<barcode> auto-adds the item.
+  useEffect(() => {
+    if (scan && search !== scan && scannedRef.current !== scan) setSearch(scan);
+  }, [scan]);
+
+  useEffect(() => {
+    if (!scan || scannedRef.current === scan || search !== scan) return;
+    const match = products.find((p: any) => p.barcode === scan || p.sku === scan);
+    if (!products.length) return;
+    scannedRef.current = scan;
+    if (match) {
+      addProduct(match);
+      toast.success(`${match.name} added to cart`);
+    } else {
+      toast.error("No product found for that code");
+    }
+    setSearch("");
+    navigate({ search: () => ({ scan: undefined }), replace: true });
+    setTimeout(() => searchRef.current?.focus(), 0);
+  }, [scan, products, search]);
 
   const isSplit = paymentMethod.includes("+");
   const splitParts = isSplit ? paymentMethod.split("+") : [];

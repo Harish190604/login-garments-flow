@@ -18,6 +18,7 @@ import {
   Bell,
   ShieldCheck,
   Receipt,
+  Truck,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import logoAsset from "@/assets/login-garments-logo.jpeg.asset.json";
@@ -42,6 +43,7 @@ const NAV: NavItem[] = [
   { to: "/categories", label: "Categories", icon: Tags },
   { to: "/inventory", label: "Inventory", icon: Boxes },
   { to: "/customers", label: "Customers", icon: Users },
+  { to: "/suppliers", label: "Suppliers", icon: Truck },
   { to: "/stock-transfer", label: "Stock Transfer", icon: ArrowLeftRight },
   { to: "/debts", label: "Debts", icon: Wallet },
   { to: "/expenses", label: "Expenses", icon: Receipt },
