@@ -82,6 +82,27 @@ function BillingPage() {
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: () => listC() });
   const { data: branches = [] } = useQuery({ queryKey: ["branches"], queryFn: () => listB() });
 
+  // Scanned from the Products page: /billing?scan=<barcode> auto-adds the item.
+  useEffect(() => {
+    if (scan && search !== scan && scannedRef.current !== scan) setSearch(scan);
+  }, [scan]);
+
+  useEffect(() => {
+    if (!scan || scannedRef.current === scan || search !== scan) return;
+    const match = products.find((p: any) => p.barcode === scan || p.sku === scan);
+    if (!products.length) return;
+    scannedRef.current = scan;
+    if (match) {
+      addProduct(match);
+      toast.success(`${match.name} added to cart`);
+    } else {
+      toast.error("No product found for that code");
+    }
+    setSearch("");
+    navigate({ search: {}, replace: true });
+    setTimeout(() => searchRef.current?.focus(), 0);
+  }, [scan, products, search]);
+
   const isSplit = paymentMethod.includes("+");
   const splitParts = isSplit ? paymentMethod.split("+") : [];
   const splitPaid = isSplit
