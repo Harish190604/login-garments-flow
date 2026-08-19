@@ -74,6 +74,7 @@ export type Database = {
       customers: {
         Row: {
           address: string | null
+          birthday: string | null
           branch_id: string | null
           created_at: string
           deleted_at: string | null
@@ -87,6 +88,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          birthday?: string | null
           branch_id?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -100,6 +102,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          birthday?: string | null
           branch_id?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -185,6 +188,7 @@ export type Database = {
           selling_price: number
           size: string | null
           sku: string
+          supplier_id: string | null
           updated_at: string
         }
         Insert: {
@@ -206,6 +210,7 @@ export type Database = {
           selling_price?: number
           size?: string | null
           sku: string
+          supplier_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -227,6 +232,7 @@ export type Database = {
           selling_price?: number
           size?: string | null
           sku?: string
+          supplier_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -242,6 +248,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
         ]
@@ -412,6 +425,59 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      suppliers: {
+        Row: {
+          address: string | null
+          branch_id: string | null
+          contact_person: string | null
+          created_at: string
+          email: string | null
+          gstin: string | null
+          id: string
+          is_active: boolean
+          name: string
+          notes: string | null
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          branch_id?: string | null
+          contact_person?: string | null
+          created_at?: string
+          email?: string | null
+          gstin?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          branch_id?: string | null
+          contact_person?: string | null
+          created_at?: string
+          email?: string | null
+          gstin?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suppliers_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
             referencedColumns: ["id"]
           },
         ]
