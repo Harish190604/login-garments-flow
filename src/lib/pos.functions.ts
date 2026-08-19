@@ -124,6 +124,10 @@ const productInput = z.object({
   image_url: z.string().url().optional().nullable().or(z.literal("")),
 });
 
+const productInputWithSupplier = productInput.extend({
+  supplier_id: z.string().uuid().optional().nullable(),
+});
+
 /* ---------------- Suppliers ---------------- */
 
 export const listSuppliers = createServerFn({ method: "GET" })
@@ -208,7 +212,7 @@ export const listUpcomingBirthdays = createServerFn({ method: "GET" })
 
 export const createProduct = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => productInput.parse(d))
+  .inputValidator((d: unknown) => productInputWithSupplier.parse(d))
   .handler(async ({ context, data }) => {
     const { error, data: row } = await context.supabase.from("products").insert(data).select("*").single();
     if (error) throw new Error(error.message);
@@ -232,15 +236,38 @@ export const createCustomer = createServerFn({ method: "POST" })
       phone: z.string().optional().nullable(),
       email: z.string().email().optional().nullable().or(z.literal("")),
       address: z.string().optional().nullable(),
+      birthday: z.string().optional().nullable(),
     }).parse(d),
   )
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
     const { data: prof } = await supabase.from("profiles").select("branch_id").eq("id", userId).maybeSingle();
-    const payload = { ...data, email: data.email || null, branch_id: prof?.branch_id ?? null };
+    const payload = { ...data, email: data.email || null, birthday: data.birthday || null, branch_id: prof?.branch_id ?? null };
     const { error, data: row } = await context.supabase.from("customers").insert(payload).select("*").single();
     if (error) throw new Error(error.message);
     return row;
+  });
+
+export const updateCustomer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      id: z.string().uuid(),
+      name: z.string().min(1),
+      phone: z.string().optional().nullable(),
+      email: z.string().email().optional().nullable().or(z.literal("")),
+      address: z.string().optional().nullable(),
+      birthday: z.string().optional().nullable(),
+    }).parse(d),
+  )
+  .handler(async ({ context, data }) => {
+    const { id, ...patch } = data;
+    const { error } = await context.supabase
+      .from("customers")
+      .update({ ...patch, email: patch.email || null, birthday: patch.birthday || null })
+      .eq("id", id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 const saleInput = z.object({
