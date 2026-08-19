@@ -124,6 +124,88 @@ const productInput = z.object({
   image_url: z.string().url().optional().nullable().or(z.literal("")),
 });
 
+/* ---------------- Suppliers ---------------- */
+
+export const listSuppliers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("suppliers")
+      .select("*, branches(name,code)")
+      .order("name");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+const supplierInput = z.object({
+  name: z.string().min(1),
+  contact_person: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable().or(z.literal("")),
+  address: z.string().optional().nullable(),
+  gstin: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  branch_id: z.string().uuid().optional().nullable(),
+});
+
+export const createSupplier = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => supplierInput.parse(d))
+  .handler(async ({ context, data }) => {
+    const payload = { ...data, email: data.email || null };
+    const { data: row, error } = await context.supabase.from("suppliers").insert(payload).select("*").single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const updateSupplier = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => supplierInput.extend({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { id, ...patch } = data;
+    const { error } = await context.supabase
+      .from("suppliers")
+      .update({ ...patch, email: patch.email || null })
+      .eq("id", id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteSupplier = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { error } = await context.supabase.from("suppliers").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+/** Customers whose birthday falls within the next `days` days (default 3). */
+export const listUpcomingBirthdays = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { days?: number } | undefined) => ({ days: d?.days ?? 3 }))
+  .handler(async ({ context, data }) => {
+    const { data: rows, error } = await context.supabase
+      .from("customers")
+      .select("id, name, phone, birthday, loyalty_points")
+      .is("deleted_at", null)
+      .not("birthday", "is", null)
+      .limit(1000);
+    if (error) throw new Error(error.message);
+    const today = new Date();
+    const msDay = 86400000;
+    const startOfToday = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    return (rows ?? [])
+      .map((c: any) => {
+        const b = new Date(c.birthday);
+        let next = Date.UTC(today.getFullYear(), b.getUTCMonth(), b.getUTCDate());
+        if (next < startOfToday) next = Date.UTC(today.getFullYear() + 1, b.getUTCMonth(), b.getUTCDate());
+        return { ...c, days_until: Math.round((next - startOfToday) / msDay) };
+      })
+      .filter((c: any) => c.days_until <= data.days)
+      .sort((a: any, b: any) => a.days_until - b.days_until);
+  });
+
 export const createProduct = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => productInput.parse(d))
