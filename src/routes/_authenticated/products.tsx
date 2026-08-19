@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listProducts, listCategories, listBranches, createProduct } from "@/lib/pos.functions";
+import { listProducts, listCategories, listBranches, createProduct, listSuppliers } from "@/lib/pos.functions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,15 +23,18 @@ export const Route = createFileRoute("/_authenticated/products")({
 
 function ProductsPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const list = useServerFn(listProducts);
   const cats = useServerFn(listCategories);
   const brs = useServerFn(listBranches);
   const create = useServerFn(createProduct);
+  const sups = useServerFn(listSuppliers);
 
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [barcodeCategory, setBarcodeCategory] = useState<string>("");
+  const [scan, setScan] = useState("");
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["products", search],
@@ -39,6 +42,7 @@ function ProductsPage() {
   });
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => cats() });
   const { data: branches = [] } = useQuery({ queryKey: ["branches"], queryFn: () => brs() });
+  const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: () => sups() });
 
   const mutation = useMutation({
     mutationFn: (data: any) => create({ data }),
@@ -69,7 +73,18 @@ function ProductsPage() {
       minimum_stock: Number(f.get("minimum_stock") || 5),
       branch_id: String(f.get("branch_id") || "") || null,
       image_url: String(f.get("image_url") || "") || null,
+      supplier_id: String(f.get("supplier_id") || "") || null,
     });
+  }
+
+  // Scanning a barcode here jumps straight to the POS with the item in the cart.
+  function onScanKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const code = scan.trim();
+    if (!code) return;
+    setScan("");
+    navigate({ to: "/billing", search: { scan: code } });
   }
 
   const selectedProducts = useMemo(
@@ -107,6 +122,16 @@ function ProductsPage() {
           <p className="text-sm text-muted-foreground">Manage catalog, pricing, GST and stock.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <BarcodeIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={scan}
+              onChange={(e) => setScan(e.target.value)}
+              onKeyDown={onScanKey}
+              placeholder="Scan barcode → billing"
+              className="pl-9 w-56"
+            />
+          </div>
           <Select value={barcodeCategory} onValueChange={setBarcodeCategory}>
             <SelectTrigger className="w-48"><SelectValue placeholder="Barcode by category…" /></SelectTrigger>
             <SelectContent>{categories.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
@@ -124,6 +149,12 @@ function ProductsPage() {
               <div className="space-y-1.5"><Label>Barcode</Label><Input name="barcode" placeholder="Auto-generated if empty" /></div>
               <div className="space-y-1.5 col-span-2"><Label>Name *</Label><Input name="name" required /></div>
               <div className="space-y-1.5 col-span-2"><Label>Image URL</Label><Input name="image_url" type="url" placeholder="https://…" /></div>
+              <div className="space-y-1.5 col-span-2">
+                <Label>Supplier</Label>
+                <Select name="supplier_id"><SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                  <SelectContent>{suppliers.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
               <div className="space-y-1.5">
                 <Label>Category</Label>
                 <Select name="category_id"><SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
